@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import '../../core/utils/route_transition.dart';
+import '../../services/session_service.dart';
 import 'login_page.dart';
+import 'dashboard_page.dart';
 
 class SplashPage extends StatefulWidget {
   const SplashPage({super.key});
@@ -13,12 +16,36 @@ class _SplashPageState extends State<SplashPage> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 2), () {
-      // Ganti ke halaman berikutnya, misal LoginPage (bikin nanti)
-      Navigator.of(context).pushReplacement(
-        FadePageRoute(page: const LoginPage())
-      );
-    });
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    // Remove native splash screen
+    FlutterNativeSplash.remove();
+
+    // Initialize session service
+    final sessionService = await SessionService.init();
+
+    // Add artificial delay for splash screen
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
+    // Check session and navigate accordingly
+    final isActive = await sessionService.isSessionActive();
+    if (isActive) {
+      // Update last activity time when app starts
+      await sessionService.updateLastActivity();
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushReplacement(FadePageRoute(page: const DashboardPage()));
+    } else {
+      if (!mounted) return;
+      Navigator.of(
+        context,
+      ).pushReplacement(FadePageRoute(page: const LoginPage()));
+    }
   }
 
   @override
@@ -29,11 +56,7 @@ class _SplashPageState extends State<SplashPage> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              Icons.fingerprint,
-              color: Colors.white,
-              size: 64,
-            ),
+            Icon(Icons.fingerprint, color: Colors.white, size: 64),
             const SizedBox(height: 24),
             const CircularProgressIndicator(
               valueColor: AlwaysStoppedAnimation<Color>(Colors.white),

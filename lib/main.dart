@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'presentation/pages/splash_page.dart';
 import 'presentation/pages/login_page.dart';
+import 'presentation/pages/dashboard_page.dart';
 
 void main() {
+  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
+  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
+  
   runApp(const MyApp());
 }
 
@@ -13,12 +18,13 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Absen Mobile',
+      title: 'Absensi Karyawan',
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => SplashPage(),
+        '/': (context) => const SplashPage(),
         '/login': (context) => const LoginPage(),
+        '/dashboard': (context) => const DashboardPage(),
       },
       theme: ThemeData(
         // This is the theme of your application.
@@ -37,6 +43,7 @@ class MyApp extends StatelessWidget {
         // This works for code too, not just values: Most code changes can be
         // tested with just a hot reload.
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        useMaterial3: true,
       ),
       // home: SplashPage() // const MyHomePage(title: 'Flutter Demo Home Page'),
     );
