@@ -1,6 +1,11 @@
 import 'package:flutter/material.dart';
 import '../../services/session_service.dart';
 import '../../services/biometric_service.dart';
+import '../../services/auth_service.dart';
+import '../../core/utils/error_helper.dart';
+
+// Mode debug untuk testing biometrik di emulator
+const bool debugBiometricMode = false;
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -17,7 +22,9 @@ class _LoginPageState extends State<LoginPage> {
   bool _showBiometric = false;
   bool _biometricLoading = false;
   late SessionService _sessionService;
-  late BiometricService _biometricService;
+  BiometricService? _biometricService;
+  AuthService? _authService;
+  String? _errorMessage;
 
   @override
   void initState() {
@@ -29,12 +36,22 @@ class _LoginPageState extends State<LoginPage> {
     try {
       _sessionService = await SessionService.init();
       _biometricService = await BiometricService.init();
+      _authService = await AuthService.init();
 
-      if (mounted && _biometricService.isBiometricAvailable) {
+      if (mounted) {
         setState(() {
-          _showBiometric = true;
+          // Jika mode debug aktif, paksa tampilkan tombol biometrik untuk testing
+          _showBiometric =
+              debugBiometricMode ||
+              (_biometricService?.isBiometricAvailable ?? false);
         });
       }
+
+      // Log status biometrik
+      debugPrint(
+        'Biometric available: ${_biometricService?.isBiometricAvailable}',
+      );
+      debugPrint('Show biometric button: $_showBiometric');
     } catch (e) {
       debugPrint('Error initializing services: $e');
     }
@@ -42,24 +59,34 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _handleBiometricLogin() async {
     setState(() => _biometricLoading = true);
+    _clearError();
 
     try {
-      final authenticated = await _biometricService.authenticate();
-      if (authenticated) {
-        // In real app, you should validate the previous token or get a new one
-        await _sessionService.saveToken('dummy_token_123');
+      final authenticated =
+          debugBiometricMode || await _biometricService!.authenticate();
 
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/dashboard');
+      if (authenticated) {
+        // Check if there's a stored token and it's valid
+        final token = _sessionService.getToken();
+        if (token != null) {
+          // Validate token with backend
+          final isValid = await _sessionService.validateTokenWithBackend(token);
+          if (isValid) {
+            if (!mounted) return;
+            Navigator.pushReplacementNamed(context, '/dashboard');
+          } else {
+            // Token invalid, clear it and show error
+            await _sessionService.clearSession();
+            _setError('Sesi Anda telah berakhir. Silakan login kembali.');
+          }
+        } else {
+          _setError('Tidak ada sesi tersimpan. Silakan login manual.');
+        }
+      } else {
+        _setError('Autentikasi biometrik gagal');
       }
     } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Gagal autentikasi: ${e.toString()}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      _setError('Gagal autentikasi: ${e.toString()}');
     } finally {
       if (mounted) {
         setState(() => _biometricLoading = false);
@@ -67,20 +94,46 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  void _setError(String message) {
+    if (!mounted) return;
+    setState(() => _errorMessage = message);
+
+    // Check if it's a connection error
+    if (message.contains('koneksi') || message.contains('Connection refused')) {
+      ErrorHelper.showConnectionErrorDialog(context, message);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(message), backgroundColor: Colors.red),
+      );
+    }
+  }
+
+  void _clearError() {
+    if (!mounted) return;
+    setState(() => _errorMessage = null);
+  }
+
   Future<void> _handleLogin() async {
     if (_formKey.currentState!.validate()) {
-      setState(() => _isLoading = true);
+      setState(() {
+        _isLoading = true;
+        _errorMessage = null;
+      });
 
       try {
-        // TODO: Implement actual API login
-        // This is just a simulation
-        await Future.delayed(const Duration(seconds: 2));
+        final email = _emailController.text.trim();
+        final password = _passwordController.text.trim();
 
-        // Save session with dummy token
-        await _sessionService.saveToken('dummy_token_123');
+        final result = await _authService!.login(email, password);
 
-        if (!mounted) return;
-        Navigator.pushReplacementNamed(context, '/dashboard');
+        if (result['success']) {
+          if (!mounted) return;
+          Navigator.pushReplacementNamed(context, '/dashboard');
+        } else {
+          _setError(result['message']);
+        }
+      } catch (e) {
+        _setError('Terjadi kesalahan: ${e.toString()}');
       } finally {
         if (mounted) {
           setState(() => _isLoading = false);
@@ -122,7 +175,7 @@ class _LoginPageState extends State<LoginPage> {
                   padding: const EdgeInsets.all(18),
                   child: Icon(
                     _showBiometric
-                        ? (_biometricService.hasFaceId
+                        ? (_biometricService!.hasFaceId
                               ? Icons.face
                               : Icons.fingerprint)
                         : Icons.lock,
@@ -138,8 +191,27 @@ class _LoginPageState extends State<LoginPage> {
                     color: Colors.deepPurple[900],
                   ),
                 ),
+                const SizedBox(height: 32),
+                // Error message
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Text(
+                      _errorMessage!,
+                      style: TextStyle(color: Colors.red[800], fontSize: 14),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
+                // Jika biometrik tersedia, tampilkan tombol
                 if (_showBiometric) ...[
-                  const SizedBox(height: 32),
                   Container(
                     width: double.infinity,
                     margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -157,13 +229,13 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                             )
                           : Icon(
-                              _biometricService.hasFaceId
+                              _biometricService!.hasFaceId
                                   ? Icons.face
                                   : Icons.fingerprint,
                               size: 28,
                             ),
                       label: Text(
-                        _biometricService.hasFaceId
+                        _biometricService!.hasFaceId
                             ? 'Login dengan Face ID'
                             : 'Login dengan Fingerprint',
                         style: const TextStyle(
@@ -203,6 +275,7 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 32),
                 ],
+                // Form login email dan password
                 Container(
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(

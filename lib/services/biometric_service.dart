@@ -1,4 +1,5 @@
 import 'package:flutter/services.dart';
+import 'package:flutter/material.dart'; // Tambahkan import material untuk debugPrint
 import 'package:local_auth/local_auth.dart';
 import 'package:local_auth/error_codes.dart' as auth_error;
 
@@ -18,10 +19,18 @@ class BiometricService {
   Future<void> _checkBiometric() async {
     try {
       _canCheckBiometrics = await _localAuth.canCheckBiometrics;
+      debugPrint('canCheckBiometrics: $_canCheckBiometrics'); // Debug log
+
       if (_canCheckBiometrics == true) {
         _availableBiometrics = await _localAuth.getAvailableBiometrics();
+        debugPrint('availableBiometrics: $_availableBiometrics'); // Debug log
+      } else {
+        debugPrint('Device TIDAK mendukung biometric!'); // Debug log
       }
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      debugPrint(
+        'Error checking biometric: ${e.message}, code: ${e.code}',
+      ); // Debug log error
       _canCheckBiometrics = false;
       _availableBiometrics = [];
     }
@@ -38,17 +47,27 @@ class BiometricService {
       _availableBiometrics?.contains(BiometricType.fingerprint) ?? false;
 
   Future<bool> authenticate() async {
-    if (!isBiometricAvailable) return false;
+    if (!isBiometricAvailable) {
+      debugPrint('Biometric tidak tersedia untuk autentikasi'); // Debug log
+      return false;
+    }
 
     try {
-      return await _localAuth.authenticate(
+      debugPrint('Mencoba autentikasi biometrik...'); // Debug log
+      final result = await _localAuth.authenticate(
         localizedReason: 'Autentikasi untuk melanjutkan',
         options: const AuthenticationOptions(
           stickyAuth: true,
           biometricOnly: true,
         ),
       );
+      debugPrint('Hasil autentikasi: $result'); // Debug log hasil
+      return result;
     } on PlatformException catch (e) {
+      debugPrint(
+        'Error autentikasi: ${e.message}, code: ${e.code}',
+      ); // Debug log error
+
       if (e.code == auth_error.notAvailable ||
           e.code == auth_error.notEnrolled ||
           e.code == auth_error.passcodeNotSet) {
